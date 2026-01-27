@@ -19,7 +19,17 @@ This project is a reference implementation of a blockchain-based checkout platfo
 ### Structure
 
 - `contracts/` – Solidity checkout contract.
-- `backend/` – Node/TypeScript API + event listener.
+- `backend/` – Node/TypeScript API + event listener, backed by Postgres (suitable for Render).
 - `sdk/` – Embeddable JavaScript SDK for merchants.
+
+### Backend persistence on Render
+
+- Provision a **Postgres** instance on Render and copy its `DATABASE_URL`.
+- Set the following environment variables for your Render service:
+  - `DATABASE_URL` – Postgres connection string.
+  - `API_KEY` – secret key used by merchants to call your backend.
+  - `RPC_URL` – Coston2 RPC endpoint.
+  - `CHECKOUT_CONTRACT_ADDRESS` – deployed `Checkout` contract.
+- On startup the backend will automatically create an `orders` table if it does not exist.
 
 

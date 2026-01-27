@@ -9,11 +9,11 @@ const CHECKOUT_ABI = [
   "event OrderPaid(bytes32 indexed orderId, address indexed payer, address indexed merchant, uint256 amount, uint256 timestamp, string metadata)"
 ];
 
-const RPC_URL = process.env.SEPOLIA_RPC_URL || "";
+const RPC_URL = process.env.RPC_URL || process.env.SEPOLIA_RPC_URL || "";
 const CHECKOUT_CONTRACT_ADDRESS = process.env.CHECKOUT_CONTRACT_ADDRESS || "";
 
 if (!RPC_URL || !CHECKOUT_CONTRACT_ADDRESS) {
-  console.warn("SEPOLIA_RPC_URL or CHECKOUT_CONTRACT_ADDRESS not set. Blockchain listener is disabled.");
+  console.warn("RPC_URL or CHECKOUT_CONTRACT_ADDRESS not set. Blockchain listener is disabled.");
   process.exit(0);
 }
 
@@ -26,9 +26,13 @@ async function main() {
   contract.on("OrderPaid", (orderId: string, payer: string, merchant: string, amount: bigint) => {
     console.log("OrderPaid event:", { orderId, payer, merchant, amount: amount.toString() });
 
-    // Convert bytes32 ID to string; in a real system you'd ensure a consistent encoding.
-    const decodedOrderId = ethers.toBeHex(orderId);
-    markOrderConfirmed(decodedOrderId);
+    // In this example we stored the UUID string off-chain and hashed it to bytes32 on-chain with ethers.id(orderId).
+    // To map the event back to the same UUID in the database you can:
+    //  - store the bytes32 hash alongside the order row, OR
+    //  - derive a stable encoding strategy you can reverse/compare.
+    //
+    // For now we log the raw bytes32 so you can align encoding later.
+    void markOrderConfirmed(orderId);
   });
 }
 

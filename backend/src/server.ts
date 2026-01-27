@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import { randomUUID } from "crypto";
+import { Pool } from "pg";
 
 dotenv.config();
 
@@ -10,7 +11,7 @@ type OrderStatus = "pending" | "confirmed" | "failed";
 interface Order {
   id: string;
   merchantAddress: string;
-  amountUSDC: string; // string to avoid JS float issues, in 6-decimal units
+  amount: string; // smallest units (e.g. 6 decimals)
   status: OrderStatus;
   createdAt: string;
 }
@@ -21,9 +22,32 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 4000;
 const API_KEY = process.env.API_KEY || "dev-api-key";
+const DATABASE_URL = process.env.DATABASE_URL;
 
-// In-memory store for demo purposes.
-const orders = new Map<string, Order>();
+if (!DATABASE_URL) {
+  console.warn("DATABASE_URL is not set. Backend will not be able to persist orders.");
+}
+
+// Postgres connection pool (Render provides DATABASE_URL env var)
+export const pool = new Pool({
+  connectionString: DATABASE_URL
+});
+
+async function ensureSchema() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS orders (
+      id TEXT PRIMARY KEY,
+      merchant_address TEXT NOT NULL,
+      amount TEXT NOT NULL,
+      status TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+}
+
+ensureSchema().catch((err) => {
+  console.error("Failed to ensure database schema", err);
+});
 
 function authenticate(req: express.Request, res: express.Response, next: express.NextFunction) {
   const key = req.header("x-api-key");
@@ -33,54 +57,66 @@ function authenticate(req: express.Request, res: express.Response, next: express
   next();
 }
 
-app.post("/api/orders", authenticate, (req, res) => {
-  const { merchantAddress, amountUSDC } = req.body as {
+app.post("/api/orders", authenticate, async (req, res) => {
+  const { merchantAddress, amount } = req.body as {
     merchantAddress?: string;
-    amountUSDC?: string;
+    amount?: string;
   };
 
-  if (!merchantAddress || !amountUSDC) {
-    return res.status(400).json({ error: "merchantAddress and amountUSDC are required" });
+  if (!merchantAddress || !amount) {
+    return res.status(400).json({ error: "merchantAddress and amount are required" });
   }
 
   const id = randomUUID();
-  const order: Order = {
-    id,
-    merchantAddress,
-    amountUSDC,
-    status: "pending",
-    createdAt: new Date().toISOString()
-  };
 
-  orders.set(id, order);
+  try {
+    await pool.query(
+      `INSERT INTO orders (id, merchant_address, amount, status) VALUES ($1, $2, $3, $4)`,
+      [id, merchantAddress, amount, "pending"]
+    );
 
-  return res.json({
-    orderId: id,
-    merchantAddress,
-    amountUSDC
-  });
-});
-
-app.get("/api/orders/:id", authenticate, (req, res) => {
-  const { id } = req.params;
-  const order = orders.get(id);
-  if (!order) {
-    return res.status(404).json({ error: "Order not found" });
+    return res.json({
+      orderId: id,
+      merchantAddress,
+      amount
+    });
+  } catch (err) {
+    console.error("Error creating order:", err);
+    return res.status(500).json({ error: "Failed to create order" });
   }
-  return res.json(order);
 });
 
-// This would be called by the blockchain listener when it sees OrderPaid.
-export function markOrderConfirmed(orderId: string) {
-  const order = orders.get(orderId);
-  if (order) {
-    order.status = "confirmed";
-    orders.set(orderId, order);
+app.get("/api/orders/:id", authenticate, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const result = await pool.query(
+      `SELECT id, merchant_address AS "merchantAddress", amount, status, created_at AS "createdAt" FROM orders WHERE id = $1`,
+      [id]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+
+    const row = result.rows[0] as Order;
+    return res.json(row);
+  } catch (err) {
+    console.error("Error fetching order:", err);
+    return res.status(500).json({ error: "Failed to fetch order" });
+  }
+});
+
+// This is called by the blockchain listener when it sees OrderPaid.
+export async function markOrderConfirmed(orderId: string) {
+  try {
+    await pool.query(`UPDATE orders SET status = 'confirmed' WHERE id = $1`, [orderId]);
+  } catch (err) {
+    console.error("Error marking order confirmed:", err);
   }
 }
 
 app.listen(PORT, () => {
   console.log(`Backend API listening on http://localhost:${PORT}`);
 });
-
 

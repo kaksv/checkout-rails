@@ -2,7 +2,9 @@
   "name": "proofrails-checkout",
   "version": "0.1.0",
   "private": true,
+  "main": "backend/src/server.ts",
   "scripts": {
+    "start": "node backend/src/server.ts",
     "dev:backend": "ts-node-dev --respawn backend/src/server.ts",
     "dev:listener": "ts-node-dev --respawn backend/src/blockchainListener.ts",
     "build:sdk": "cp sdk/src/index.js sdk/dist/proofrails-checkout.js"

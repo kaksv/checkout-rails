@@ -30,7 +30,9 @@ if (!DATABASE_URL) {
 
 // Postgres connection pool (Render provides DATABASE_URL env var)
 export const pool = new Pool({
-  connectionString: DATABASE_URL
+  connectionString: DATABASE_URL,
+  // For Render's PostgreSQL SSL requirement:
+  ssl: DATABASE_URL ? { rejectUnauthorized: false } : false
 });
 
 async function ensureSchema() {
